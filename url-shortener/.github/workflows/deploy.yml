@@ -1,0 +1,38 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}
+  IMAGE_NAME: url-shortener
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build and push image
+        run: |
+          IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          IMAGE_LATEST=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+          docker push "$IMAGE_TAG"
+          docker push "$IMAGE_LATEST"
+
+      - name: Deploy App Platform
+        run: |
+          # Updates the App Platform app to pull the new image tag.
+          # Requires secrets.DO_APP_ID to reference an existing app created from .do/app.yaml
+          doctl apps create-deployment ${{ secrets.DO_APP_ID }} --wait
